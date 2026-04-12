@@ -1,5 +1,5 @@
 # general
-gpu_id: 1
+gpu_id: 6
 use_gpu: True
 seed: 42
 state: INFO

@@ -7,7 +7,9 @@ recbole.quick_start
 ########################
 """
 import logging
+import os
 from logging import getLogger
+from datetime import datetime
 
 import torch
 import pickle
@@ -15,6 +17,69 @@ import pickle
 from recbole.config import Config
 from recbole.data import create_dataset, data_preparation, save_split_dataloaders, load_split_dataloaders
 from recbole.utils import init_logger, get_model, get_trainer, init_seed, set_color
+
+
+def _ensure_hr_nd_5_10(config):
+    """Ensure evaluation always includes Hit/NDCG at topk 5 and 10."""
+    metrics = config['metrics']
+    if isinstance(metrics, str):
+        metrics = [metrics]
+    metrics_lower = {m.lower(): m for m in metrics}
+    if 'hit' not in metrics_lower:
+        metrics.append('Hit')
+    if 'ndcg' not in metrics_lower:
+        metrics.append('NDCG')
+    config['metrics'] = metrics
+
+    topk = config['topk']
+    if isinstance(topk, int):
+        topk = [topk]
+    topk = sorted(set(topk + [5, 10]))
+    config['topk'] = topk
+
+
+def _sort_metric_key(item):
+    key = item[0]
+    if '@' in key:
+        metric_name, topk = key.split('@', 1)
+        try:
+            topk = int(topk)
+        except ValueError:
+            topk = 10 ** 9
+        return metric_name.lower(), topk, key
+    return key.lower(), 10 ** 9, key
+
+
+def _format_metric_lines(result_dict):
+    if result_dict is None:
+        return ['  (empty)']
+    lines = []
+    for key, value in sorted(result_dict.items(), key=_sort_metric_key):
+        lines.append(f'  {key}: {float(value):.6f}')
+    return lines
+
+
+def _save_experiment_result(config, best_valid_score, best_valid_result, test_result):
+    result_dir = os.path.join('log', 'results')
+    os.makedirs(result_dir, exist_ok=True)
+    result_file = os.path.join(result_dir, f"{config['model']}_{config['dataset']}.txt")
+    time_str = datetime.now().isoformat(timespec='seconds')
+    record_lines = [
+        f'time: {time_str}',
+        f"model: {config['model']}",
+        f"dataset: {config['dataset']}",
+        f"topk: {config['topk']}",
+        f"metrics: {config['metrics']}",
+        f'best_valid_score: {float(best_valid_score):.6f}',
+        'best_valid_result:',
+        *_format_metric_lines(best_valid_result),
+        'test_result:',
+        *_format_metric_lines(test_result),
+        '',
+    ]
+    with open(result_file, 'a', encoding='utf-8') as f:
+        f.write('\n'.join(record_lines))
+    return result_file
 
 
 def run_recbole(model=None, dataset=None, config_file_list=None, config_dict=None, saved=True):
@@ -30,6 +95,7 @@ def run_recbole(model=None, dataset=None, config_file_list=None, config_dict=Non
     """
     # configurations initialization
     config = Config(model=model, dataset=dataset, config_file_list=config_file_list, config_dict=config_dict)
+    _ensure_hr_nd_5_10(config)
     init_seed(config['seed'], config['reproducibility'])
     # logger initialization
     init_logger(config)
@@ -61,9 +127,11 @@ def run_recbole(model=None, dataset=None, config_file_list=None, config_dict=Non
 
     # model evaluation
     test_result = trainer.evaluate(test_data, load_best_model=saved, show_progress=config['show_progress'])
+    result_file = _save_experiment_result(config, best_valid_score, best_valid_result, test_result)
 
     logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
     logger.info(set_color('test result', 'yellow') + f': {test_result}')
+    logger.info(set_color('saved result', 'yellow') + f': {result_file}')
 
     return {
         'best_valid_score': best_valid_score,
@@ -83,6 +151,7 @@ def objective_function(config_dict=None, config_file_list=None, saved=True):
     """
 
     config = Config(config_dict=config_dict, config_file_list=config_file_list)
+    _ensure_hr_nd_5_10(config)
     init_seed(config['seed'], config['reproducibility'])
     logging.basicConfig(level=logging.ERROR)
     dataset = create_dataset(config)
@@ -116,7 +185,12 @@ def load_data_and_model(model_file):
             - valid_data (AbstractDataLoader): The dataloader for validation.
             - test_data (AbstractDataLoader): The dataloader for testing.
     """
-    checkpoint = torch.load(model_file)
+    try:
+        checkpoint = torch.load(model_file, weights_only=False)
+    except TypeError:
+        checkpoint = torch.load(model_file)
+    except pickle.UnpicklingError:
+        checkpoint = torch.load(model_file, weights_only=False)
     # checkpoint = torch.load(model_file, map_location=torch.device('cpu')) # for visualization
     config = checkpoint['config']
     init_seed(config['seed'], config['reproducibility'])

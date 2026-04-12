@@ -288,7 +288,7 @@ class SimDiff(SequentialRecommender):
         test_items_emb = self.item_embedding.weight[:-1, :]
         scores = torch.matmul(seq_output, test_items_emb.transpose(0, 1))  # [B n_items]
 
-        return scores, seq_output
+        return scores
 
 
 

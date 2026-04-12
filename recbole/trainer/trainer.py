@@ -20,6 +20,7 @@ recbole.trainer.trainer
 import os
 from logging import getLogger
 from time import time
+import pickle
 
 import numpy as np
 import torch
@@ -108,6 +109,15 @@ class Trainer(AbstractTrainer):
         self.evaluator = Evaluator(config)
         self.item_tensor = None
         self.tot_item_num = None
+
+    def _load_checkpoint_compat(self, checkpoint_file):
+        """Load checkpoints compatibly across PyTorch versions."""
+        try:
+            return torch.load(checkpoint_file, weights_only=False)
+        except TypeError:
+            return torch.load(checkpoint_file)
+        except pickle.UnpicklingError:
+            return torch.load(checkpoint_file, weights_only=False)
 
     def _build_optimizer(self, **kwargs):
         r"""Init the Optimizer
@@ -241,7 +251,7 @@ class Trainer(AbstractTrainer):
         """
         resume_file = str(resume_file)
         self.saved_model_file = resume_file
-        checkpoint = torch.load(resume_file)
+        checkpoint = self._load_checkpoint_compat(resume_file)
         self.start_epoch = checkpoint['epoch'] + 1
         self.cur_step = checkpoint['cur_step']
         self.best_valid_score = checkpoint['best_valid_score']
@@ -447,7 +457,7 @@ class Trainer(AbstractTrainer):
 
         if load_best_model:
             checkpoint_file = model_file or self.saved_model_file
-            checkpoint = torch.load(checkpoint_file)
+            checkpoint = self._load_checkpoint_compat(checkpoint_file)
             self.model.load_state_dict(checkpoint['state_dict'])
             self.model.load_other_parameter(checkpoint.get('other_parameter'))
             message_output = 'Loading model structure and parameters from {}'.format(checkpoint_file)

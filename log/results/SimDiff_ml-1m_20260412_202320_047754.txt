@@ -1,0 +1,28 @@
+time: 2026-04-12T20:23:20
+model: SimDiff
+dataset: ml-1m
+topk: [5, 10]
+metrics: ['Recall', 'MRR', 'NDCG', 'Hit', 'Precision']
+best_valid_score: 0.091200
+best_valid_result:
+  hit@5: 0.156000
+  hit@10: 0.261300
+  mrr@5: 0.077200
+  mrr@10: 0.091200
+  ndcg@5: 0.096500
+  ndcg@10: 0.130500
+  precision@5: 0.031200
+  precision@10: 0.026100
+  recall@5: 0.156000
+  recall@10: 0.261300
+test_result:
+  hit@5: 0.153600
+  hit@10: 0.247000
+  mrr@5: 0.077200
+  mrr@10: 0.089400
+  ndcg@5: 0.096000
+  ndcg@10: 0.126000
+  precision@5: 0.030700
+  precision@10: 0.024700
+  recall@5: 0.153600
+  recall@10: 0.247000

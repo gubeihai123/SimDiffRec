@@ -62,7 +62,13 @@ def _format_metric_lines(result_dict):
 def _save_experiment_result(config, best_valid_score, best_valid_result, test_result):
     result_dir = os.path.join('log', 'results')
     os.makedirs(result_dir, exist_ok=True)
-    result_file = os.path.join(result_dir, f"{config['model']}_{config['dataset']}.txt")
+    run_id = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    base_name = f"{config['model']}_{config['dataset']}_{run_id}"
+    result_file = os.path.join(result_dir, f'{base_name}.txt')
+    suffix = 1
+    while os.path.exists(result_file):
+        result_file = os.path.join(result_dir, f'{base_name}_{suffix}.txt')
+        suffix += 1
     time_str = datetime.now().isoformat(timespec='seconds')
     record_lines = [
         f'time: {time_str}',
@@ -77,7 +83,7 @@ def _save_experiment_result(config, best_valid_score, best_valid_result, test_re
         *_format_metric_lines(test_result),
         '',
     ]
-    with open(result_file, 'a', encoding='utf-8') as f:
+    with open(result_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(record_lines))
     return result_file
 

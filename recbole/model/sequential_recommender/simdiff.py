@@ -202,7 +202,7 @@ class SimDiff(SequentialRecommender):
         
         probs = F.softmax(logits, dim=-1)
         
-        topk_probs, topk = torch.topk(probs, k=self.n_sampling, dim=-1)  # shape: [batch_size, seq_len, 2]
+        _, topk = torch.topk(probs, k=self.n_sampling, dim=-1)  # shape: [batch_size, seq_len, 2]
         
         max_probs, _ = torch.max(probs, dim=-1)  # shape: [batch_size, seq_len]
         max_probs[item_seq == 0] = 0
@@ -211,10 +211,7 @@ class SimDiff(SequentialRecommender):
         masked_indices = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=logits.device)
         masked_indices.scatter_(1, topk_indices, True)
         
-        logits = torch.rand_like(logits)
-        _, topk = torch.topk(logits, k=self.n_sampling, dim=-1)
-        
-        
+
         pos_index = topk[..., 0]   # shape: [batch, seq_len]
         neg_index = topk[..., -1]   # shape: [batch, seq_len]
         

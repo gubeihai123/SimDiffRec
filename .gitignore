@@ -172,3 +172,22 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Project-specific artifacts (do not track experiment data/outputs)
+dataset/
+log/*
+!log/results/
+!log/results/**
+log_tensorboard/
+saved/
+
+# Large model/checkpoint files
+*.pth
+*.pt
+*.ckpt
+
+# Common local/editor/system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

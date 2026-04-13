@@ -205,11 +205,28 @@ class SimDiff(SequentialRecommender):
         _, topk = torch.topk(probs, k=self.n_sampling, dim=-1)  # shape: [batch_size, seq_len, 2]
         
         max_probs, _ = torch.max(probs, dim=-1)  # shape: [batch_size, seq_len]
-        max_probs[item_seq == 0] = 0
-        _, topk_indices = torch.topk(max_probs, k=self.mask_item_length, dim=1)  # shape: [batch_size, k]
+
+        # Do not allow padding positions to be selected for replacement.
+        valid_positions = item_seq != 0
+        max_probs = max_probs.masked_fill(~valid_positions, torch.finfo(max_probs.dtype).min)
+
+        # Dynamically set mask length based on each sequence's real length.
+        valid_lengths = valid_positions.sum(dim=1)
+        dynamic_mask_lengths = (valid_lengths.float() * self.mask_ratio).long()
+        dynamic_mask_lengths = torch.where(
+            (valid_lengths > 0) & (dynamic_mask_lengths == 0),
+            torch.ones_like(dynamic_mask_lengths),
+            dynamic_mask_lengths,
+        )
+        dynamic_mask_lengths = torch.minimum(dynamic_mask_lengths, valid_lengths)
 
         masked_indices = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=logits.device)
-        masked_indices.scatter_(1, topk_indices, True)
+        max_dynamic_mask_length = int(dynamic_mask_lengths.max().item())
+        if max_dynamic_mask_length > 0:
+            _, topk_indices = torch.topk(max_probs, k=max_dynamic_mask_length, dim=1)
+            rank = torch.arange(max_dynamic_mask_length, device=logits.device).unsqueeze(0)
+            take_mask = rank < dynamic_mask_lengths.unsqueeze(1)
+            masked_indices.scatter_(1, topk_indices, take_mask)
         
 
         pos_index = topk[..., 0]   # shape: [batch, seq_len]

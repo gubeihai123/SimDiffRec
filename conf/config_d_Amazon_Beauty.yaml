@@ -12,7 +12,7 @@ save_dataloaders: False
 loss_type: CE
 neg_sampling: ~
 train_batch_size: 1024
-eval_batch_size : 1024 
+eval_batch_size : 2048
 # model (SimDiff)
 n_layers: 2
 n_heads: 2

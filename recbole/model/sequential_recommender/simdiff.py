@@ -127,6 +127,7 @@ class SimDiff(SequentialRecommender):
         self.mask_strategy = config['mask_strategy']
 
         self.loss_fct = nn.CrossEntropyLoss(ignore_index=0)
+        self.loss_vocab_chunk_size = int(config['loss_vocab_chunk_size']) if 'loss_vocab_chunk_size' in config else 256
         self.n_embedding = config['n_embedding']
         self.n_sampling = config['n_sampling']
         self.item_embedding = nn.Embedding(self.n_items + 1, self.hidden_size, padding_idx=0)  # mask token add 1
@@ -178,15 +179,23 @@ class SimDiff(SequentialRecommender):
         
         seq_emb = self.item_embedding(item_seq)
         
-        sims = torch.matmul(seq_emb, emb_weight)
-        
         batch_size, seq_len, _ = seq_emb.shape
+        top_n_indices_list = []
 
-        batch_idx = torch.arange(batch_size)[:, None].expand(batch_size, seq_len)
-        seq_idx = torch.arange(seq_len)[None, :].expand(batch_size, seq_len)
+        # Memory optimization: compute each sequence step independently to avoid
+        # allocating a huge [batch_size, seq_len, n_items] similarity tensor.
+        batch_arange = torch.arange(batch_size, device=item_seq.device)
+        for i in range(seq_len):
+            current_step_emb = seq_emb[:, i, :]  # [batch_size, hidden_size]
+            sims_i = torch.matmul(current_step_emb, emb_weight)  # [batch_size, n_items]
 
-        sims[batch_idx, seq_idx, item_seq] = torch.finfo(emb_weight.dtype).min
-        _, top_n_indices = torch.topk(sims, k=self.n_embedding, dim=-1)  # shape: [batch_size, seq_len, n]
+            # Mask self-item to avoid selecting itself as the nearest neighbor.
+            sims_i[batch_arange, item_seq[:, i]] = torch.finfo(emb_weight.dtype).min
+
+            _, top_n_i = torch.topk(sims_i, k=self.n_embedding, dim=-1)
+            top_n_indices_list.append(top_n_i)
+
+        top_n_indices = torch.stack(top_n_indices_list, dim=1)  # [batch_size, seq_len, n_embedding]
 
         top_n_embeds = self.item_embedding(top_n_indices)  # [batch_size, seq_len, n, hidden_dim]
 
@@ -200,11 +209,9 @@ class SimDiff(SequentialRecommender):
         logits, generate_loss, seq_output = self.generator.predictSeq_diffusion(item_seq, noise_embeds + timestep_embeddings, None)
         
         
-        probs = F.softmax(logits, dim=-1)
-        
-        _, topk = torch.topk(probs, k=self.n_sampling, dim=-1)  # shape: [batch_size, seq_len, 2]
-        
-        max_probs, _ = torch.max(probs, dim=-1)  # shape: [batch_size, seq_len]
+        # Avoid allocating an extra full-vocab softmax tensor.
+        max_logits, topk = torch.topk(logits, k=self.n_sampling, dim=-1)
+        max_probs = max_logits[..., 0]
 
         # Do not allow padding positions to be selected for replacement.
         valid_positions = item_seq != 0
@@ -246,13 +253,41 @@ class SimDiff(SequentialRecommender):
 
 
     def calculate_con_loss(self, seq_output, seq_output_1):
-        logits_0 = seq_output[:, -1:, :].mean(dim=1).unsqueeze(1)
-        logits_1 = seq_output_1[:, -1:, :].mean(dim=1).unsqueeze(0)
-        cos_sim = self.con_sim(logits_0, logits_1).view(-1, seq_output_1.size(0))
+        logits_0 = seq_output[:, -1:, :].mean(dim=1)
+        logits_1 = seq_output_1[:, -1:, :].mean(dim=1)
+
+        # Use normalized matmul to avoid a [B, 2B, D] broadcasted intermediate.
+        logits_0 = F.normalize(logits_0, dim=-1)
+        logits_1 = F.normalize(logits_1, dim=-1)
+        cos_sim = torch.matmul(logits_0, logits_1.transpose(0, 1)) / self.con_sim.temp
+
         labels = torch.arange(logits_0.size(0)).long().to(self.device)
         con_loss = self.con_loss_fct(cos_sim, labels)
 
         return con_loss
+
+    def _chunked_ce_loss(self, seq_emb, target_ids):
+        # Compute CE exactly via -(x_y - logsumexp(x)) without materializing full [N, n_items] logits.
+        valid_mask = target_ids != 0
+        if not torch.any(valid_mask):
+            return seq_emb.new_zeros(())
+
+        seq_valid = seq_emb[valid_mask]
+        target_valid = target_ids[valid_mask]
+        item_table = self.item_embedding.weight[:-1, :]
+
+        pos_emb = item_table[target_valid]
+        pos_logits = (seq_valid * pos_emb).sum(dim=-1)
+
+        running_lse = None
+        total_items = item_table.size(0)
+        for start in range(0, total_items, self.loss_vocab_chunk_size):
+            end = min(start + self.loss_vocab_chunk_size, total_items)
+            chunk_logits = torch.matmul(seq_valid, item_table[start:end].transpose(0, 1))
+            chunk_lse = torch.logsumexp(chunk_logits, dim=1)
+            running_lse = chunk_lse if running_lse is None else torch.logaddexp(running_lse, chunk_lse)
+
+        return (running_lse - pos_logits).mean()
 
 
     def calculate_loss(self, interaction):
@@ -266,10 +301,8 @@ class SimDiff(SequentialRecommender):
         pad = pos_items.unsqueeze(-1)
         item_labeln = torch.cat((item_label, pad), dim=-1).long().to(self.device)
         seq_emb = seq_output.view(-1, self.hidden_size)  # [batch*seq_len hidden_size]
-        test_item_emb = self.item_embedding.weight[:-1,:]
-        logits = torch.matmul(seq_emb, test_item_emb.transpose(0, 1))
         pos_ids_l = torch.squeeze(item_labeln.view(-1))
-        encode_loss = self.loss_fct(logits, pos_ids_l)
+        encode_loss = self._chunked_ce_loss(seq_emb, pos_ids_l)
 
         con_loss = torch.tensor(0)
         if self.con_loss_weight != 0:

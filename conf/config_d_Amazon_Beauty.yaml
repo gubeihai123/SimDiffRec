@@ -1,5 +1,5 @@
 # general
-gpu_id: 6
+gpu_id: 3
 use_gpu: True
 seed: 42
 state: INFO
@@ -11,7 +11,7 @@ save_dataset: False
 save_dataloaders: False
 loss_type: CE
 neg_sampling: ~
-train_batch_size: 1024
+train_batch_size: 2048
 eval_batch_size : 2048
 # model (SimDiff)
 n_layers: 2

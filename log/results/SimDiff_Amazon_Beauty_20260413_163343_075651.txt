@@ -1,0 +1,28 @@
+time: 2026-04-13T16:33:43
+model: SimDiff
+dataset: Amazon_Beauty
+topk: [5, 10]
+metrics: ['Recall', 'MRR', 'NDCG', 'Hit', 'Precision']
+best_valid_score: 0.021200
+best_valid_result:
+  hit@5: 0.035400
+  hit@10: 0.059500
+  mrr@5: 0.018000
+  mrr@10: 0.021200
+  ndcg@5: 0.022300
+  ndcg@10: 0.030100
+  precision@5: 0.007100
+  precision@10: 0.005900
+  recall@5: 0.035400
+  recall@10: 0.059500
+test_result:
+  hit@5: 0.030300
+  hit@10: 0.052100
+  mrr@5: 0.015200
+  mrr@10: 0.018000
+  ndcg@5: 0.018900
+  ndcg@10: 0.025900
+  precision@5: 0.006100
+  precision@10: 0.005200
+  recall@5: 0.030300
+  recall@10: 0.052100

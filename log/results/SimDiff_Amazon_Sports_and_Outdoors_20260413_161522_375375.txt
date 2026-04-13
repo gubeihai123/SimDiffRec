@@ -1,0 +1,28 @@
+time: 2026-04-13T16:15:22
+model: SimDiff
+dataset: Amazon_Sports_and_Outdoors
+topk: [5, 10]
+metrics: ['Recall', 'MRR', 'NDCG', 'Hit', 'Precision']
+best_valid_score: 0.012800
+best_valid_result:
+  hit@5: 0.024000
+  hit@10: 0.039000
+  mrr@5: 0.010900
+  mrr@10: 0.012800
+  ndcg@5: 0.014100
+  ndcg@10: 0.018900
+  precision@5: 0.004800
+  precision@10: 0.003900
+  recall@5: 0.024000
+  recall@10: 0.039000
+test_result:
+  hit@5: 0.020500
+  hit@10: 0.034300
+  mrr@5: 0.008900
+  mrr@10: 0.010800
+  ndcg@5: 0.011800
+  ndcg@10: 0.016200
+  precision@5: 0.004100
+  precision@10: 0.003400
+  recall@5: 0.020500
+  recall@10: 0.034300
